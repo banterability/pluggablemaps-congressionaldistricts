@@ -12,6 +12,7 @@ class District(models.Model):
     slug = models.SlugField(blank=True, null=True)
     state = USStateField(blank=True, null=True)
     ordinal_name = models.CharField(blank=True, null=True, max_length=50)
+    at_large = models.BooleanField(default=False)
     
     # square_miles = models.FloatField(null=True, blank=True)
     # 

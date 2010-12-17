@@ -129,7 +129,8 @@ def extras():
         # ...slug...
         obj.slug = u'%s-%s' % (slugify(obj.state), slugify(obj.cd))
         if obj.cd == "00":
-            obj.ordinal_name = u"At-Large"
+            obj.at_large = True
+            obj.ordinal_name = ordinal(1)
         else:
             obj.ordinal_name = ordinal(obj.cd)
         # .. the full set of polygons...
