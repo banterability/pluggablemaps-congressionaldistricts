@@ -1,0 +1,3 @@
+A pluggable "GeoDjango":http://geodjango.org/ app with the boundaries of United States Congressional Districts (as of 111th Congress). Geography, loosely coupled.
+
+<blink>In development. Prior art: https://github.com/datadesk/latimes-pluggablemaps-uscounties/</blink>
