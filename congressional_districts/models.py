@@ -11,6 +11,8 @@ class District(models.Model):
     # generated
     slug = models.SlugField(blank=True, null=True)
     state = USStateField(blank=True, null=True)
+    ordinal_name = models.CharField(blank=True, null=True, max_length=50)
+    
     # square_miles = models.FloatField(null=True, blank=True)
     # 
     geom = models.MultiPolygonField(srid=4269)
@@ -20,4 +22,4 @@ class District(models.Model):
         verbose_name = "U.S. congressional district"
     
     def __unicode__(self):
-        return u'%s: The Fighting %sth' % (self.state, self.cd)
+        return u"%s: The Fightin' %s" % (self.state, self.ordinal_name)

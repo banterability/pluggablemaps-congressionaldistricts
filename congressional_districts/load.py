@@ -118,6 +118,7 @@ def extras():
         
     """
     from django.template.defaultfilters import slugify
+    from django.contrib.humanize.templatetags.humanize import ordinal
     from models import District
     # Pull a crosswalk between FIPS and state abbreviations
     adict = abbrevs()
@@ -127,6 +128,10 @@ def extras():
         obj.state = adict[obj.state_fips_code]
         # ...slug...
         obj.slug = u'%s-%s' % (slugify(obj.state), slugify(obj.cd))
+        if obj.cd == "00":
+            obj.ordinal_name = u"At-Large"
+        else:
+            obj.ordinal_name = ordinal(obj.cd)
         # .. the full set of polygons...
             # obj.set_polygons() # todo (jl)
             # obj.set_simple_polygons() # todo (jl)
