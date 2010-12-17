@@ -93,7 +93,7 @@ def abbrevs():
     Load the postal abbreviations using the FIPS codes as our guide.
     """
     import csv
-    from models import County
+    from models import District
     f = open(fips_file, 'r')
     r = csv.DictReader(f, delimiter='\t')
     d = {}
