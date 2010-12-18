@@ -1,26 +1,187 @@
+# Models
 from django.contrib.gis.db import models
 from django.contrib.localflavor.us.models import USStateField
 
+# Helpers
+from copy import deepcopy
+from django.utils.translation import ugettext_lazy as _
+from django.contrib.gis.gdal import OGRGeometry, OGRGeomType
+
+
 class District(models.Model):
-    state_fips_code = models.CharField(max_length=2)
-    cd = models.CharField(max_length=2)
-    lsad = models.CharField(max_length=2)
-    name = models.CharField(max_length=90)
-    lsad_trans = models.CharField(max_length=50)
+    """
+    The geograpic constituency for a single member of the U.S. House.
     
-    # generated
-    slug = models.SlugField(blank=True, null=True)
+    Created by the U.S. Census Bureau.
+    
+    Source: http://www.census.gov/geo/www/cob/cd110.html
+    """
+    # Description
+    district_number = models.CharField(max_length=2)
+    name = models.CharField(max_length=90)
+    ordinal_name = models.CharField(blank=True, max_length=50)
+    lsad = models.CharField(max_length=2)
+    lsad_trans = models.CharField(max_length=50)    
     state = USStateField(blank=True, null=True)
-    ordinal_name = models.CharField(blank=True, null=True, max_length=50)
+    slug = models.SlugField(blank=True, null=True)
+    square_miles = models.FloatField(null=True, blank=True)
     at_large = models.BooleanField(default=False)
     
-    # square_miles = models.FloatField(null=True, blank=True)
-    # 
-    geom = models.MultiPolygonField(srid=4269)
+    # ID codes
+    state_fips_code = models.CharField(_('state FIPS code'), max_length=2)
+    
+    # Boundaries
+    GEOM_FIELD_LIST = ( # We can use this list later in views to exclude 
+                        # bulky geometry fields from database queries
+        'polygon_4269', 'polygon_4326', 'polygon_900913',
+        'simple_polygon_4269', 'simple_polygon_4326', 'simple_polygon_900913',
+    )
+    polygon_4269 = models.MultiPolygonField(_("Boundary"), srid=4269,
+        null=True, blank=True)
+    polygon_4326 = models.MultiPolygonField(srid=4326, null=True, blank=True)
+    polygon_900913 = models.MultiPolygonField(srid=900913, null=True,
+        blank=True)
+    simple_polygon_4269 = models.MultiPolygonField(srid=4269, null=True,
+        blank=True)
+    simple_polygon_4326 = models.MultiPolygonField(srid=4326, null=True,
+        blank=True)
+    simple_polygon_900913 = models.MultiPolygonField(srid=900913, null=True, 
+        blank=True)
+    
+    # Managers
     objects = models.GeoManager()
     
     class Meta:
+        ordering = ('slug',)
         verbose_name = "U.S. congressional district"
     
     def __unicode__(self):
-        return u"%s: The Fightin' %s" % (self.state, self.ordinal_name)
+        return u"%s-%s" % (self.state, self.district_number)
+    
+    def display_name(self):
+        return u"%s: The Fightin' %s" % (self.get_state_display(), self.ordinal_name)
+    
+    def get_square_miles(self):
+        """
+        Returns the neighborhoods area in square miles.
+        """
+        if not self.polygon_4269:
+            return False
+
+        # Reproject the polygon from 4269, which is measured in 
+        # decimal degrees to 3310, California Albers, which is measured 
+        # in feet.
+        copy = self.polygon_4269.transform(2229, clone=True)
+        # square_meters = self.polygon_4269.area
+
+        # One square foot equals 0.0929 square meters, 
+        # so we can do the conversion like so
+        # square_feet = square_meters / 0.0929
+        square_feet = copy.area
+
+        # There are 27,878,400 square feet in a square mile,
+        # so we can do the conversion like so
+        square_miles = square_feet / 27878400.0
+
+        # Set the field and close out
+        return square_miles
+
+    #
+    # Sync polygons
+    #
+
+    def get_srid_list(self):
+        """
+        Returns all of the SRIDs in the polygon set.
+        """
+        # Pull the meta data for the model
+        opts = self.__class__._meta
+
+        # Filter the field set down to the polygon fields
+        fields = [i.name for i in opts.fields if i.name.startswith('polygon_')]
+
+        # Return the SRID number that comes after the underscore.
+        return [int(i.split('_')[1]) for i in fields]
+
+    def set_polygons(self, canonical_srid=4269):
+        """
+        Syncs all polygon fields to the one true field, defined by the 
+        `canonical_srid` parameter.
+
+        Returns True if successful.
+        """
+        # Make sure it's a legit srid
+        srid_list = self.get_srid_list()
+        if canonical_srid not in srid_list:
+            raise ValueError("canonical_srid must exist on the model.")
+
+        # Grab the canonical data
+        canonical_field = 'polygon_%s' % str(canonical_srid)
+        canonical_data = getattr(self, canonical_field)
+
+        # Update the rest of the fields
+        srid_list.remove(canonical_srid)
+        for srid in srid_list:
+            copy = canonical_data.transform(srid, clone=True)
+            this_field = 'polygon_%s' % str(srid)
+            setattr(self, this_field, copy)
+        return True
+
+    def set_simple_polygons(self, tolerance=500):
+        """
+        Simplifies the source polygons so they don't use so many points.
+
+        Provide a tolerance score the indicates how sharply the
+        the lines should be redrawn.
+
+        Returns True if successful.
+        """
+        # Get the list of SRIDs we need to update
+        srid_list = self.get_srid_list()
+
+        # Loop through each
+        for srid in srid_list:
+
+            # Fetch the source polygon
+            source_field_name = 'polygon_%s' % str(srid)
+            source = getattr(self, source_field_name)
+
+            # Fetch the target polygon where the result will be saved
+            target_field_name = 'simple_%s' % source_field_name
+
+            # If there's nothing to transform, drop out now.
+            if not source:
+                setattr(self, target_field_name, None)
+                continue
+
+            if srid != 900913:
+                # Transform the source out of lng/lat before the simplification
+                copy = source.transform(900913, clone=True)
+            else:
+                copy = deepcopy(source)
+
+            # Simplify the source
+            simple = copy.simplify(tolerance, True)
+
+            # If the result is a polygon ...
+            if simple.geom_type == 'Polygon':
+                # Create a new Multipolygon shell
+                mp = OGRGeometry(OGRGeomType('MultiPolygon'))
+                # Transform the new poly back to its SRID
+                simple.transform(srid)
+                # Stuff it in the shell
+                mp.add(simple.wkt)
+                # Grab the WKT
+                target = mp.wkt
+
+            # If it's not a polygon...
+            else:
+                # It should be ready to go, so transform
+                simple.transform(srid)
+                # And grab the WKT
+                target = simple.wkt
+
+            # Stuff the WKT into the field
+            setattr(self, target_field_name, target)
+        return True
+   

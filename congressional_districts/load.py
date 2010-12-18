@@ -72,11 +72,11 @@ def shp():
     # source shapefile
     shp2db = {
         'state_fips_code' : 'STATE',
-        'cd' : 'CD',
+        'district_number' : 'CD',
         'lsad' : 'LSAD',
         'name' : 'NAME',
         'lsad_trans' : 'LSAD_TRANS',
-        'geom' : 'MULTIPOLYGON',
+        'polygon_4269' : 'POLYGON',
     }
     # Load our model, shape, and the map between them into GeoDjango's magic
     # shape loading function (I also slipped the source coordinate system in
@@ -86,7 +86,6 @@ def shp():
     # Fire away!
     lm.save(verbose=False)
 
-# TODO ~~~~ refactor below here
 
 def abbrevs():
     """
@@ -127,17 +126,18 @@ def extras():
         # ...set the state...
         obj.state = adict[obj.state_fips_code]
         # ...slug...
-        obj.slug = u'%s-%s' % (slugify(obj.state), slugify(obj.cd))
-        if obj.cd == "00":
+        obj.slug = u'%s-%s' % (slugify(obj.state), slugify(obj.district_number))
+        # ... name with ordinal ...
+        if obj.district_number == "00": # special-case at-large districts
             obj.at_large = True
             obj.ordinal_name = ordinal(1)
         else:
-            obj.ordinal_name = ordinal(obj.cd)
+            obj.ordinal_name = ordinal(obj.district_number)
         # .. the full set of polygons...
-            # obj.set_polygons() # todo (jl)
-            # obj.set_simple_polygons() # todo (jl)
+        obj.set_polygons()
+        obj.set_simple_polygons()
         # ... the square miles ...
-            # obj.square_miles = obj.get_square_miles() # todo (jl)
+        obj.square_miles = obj.get_square_miles()
         # ... save the changes ...
         obj.save()
     # ... and then loop again to set the simple polygons to avoid a weird bug
@@ -184,16 +184,11 @@ def specs():
     
     What we get in this case:
     
-        Fields: ['STATEFP', 'COUNTYFP', 'COUNTYNS', 'CNTYIDFP', 'NAME',
-                 'NAMELSAD', 'LSAD', 'CLASSFP', 'MTFCC', 'CSAFP', 'CBSAFP',
-                 'METDIVFP', 'FUNCSTAT', 'ALAND', 'AWATER', 'INTPTLAT', 'INTPTLON']
-        Number of features: 3234
+        Fields: ['STATE', 'CD', 'LSAD', 'NAME', 'LSAD_TRANS']
+        Number of features: 437
         Geometry Type: Polygon
-        SRS: GEOGCS["GCS_North_American_1983",
-            DATUM["North_American_Datum_1983",
-            SPHEROID["GRS_1980",6378137,298.257222101]],
-        PRIMEM["Greenwich",0],
-        UNIT["Degree",0.017453292519943295]]
+        SRS: None
+
     """
     # Crack open the shapefile
     ds = DataSource(shp_file)
